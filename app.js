@@ -21,7 +21,7 @@ const PROFILES = {
 const ROTATION = [
   ["A", "B", "C"],
   ["B", "C", "A"],
-  ["A", "C", "B"]
+  ["C", "A", "B"]
 ];
 
 function pad(value) {
@@ -248,7 +248,7 @@ function renderValidation(validation, cycleStart) {
   const cycleText = `Ciclo continuo anclado al lunes ${formatDateInput(cycleStart)}.`;
 
   if (validation.valid) {
-    el.innerHTML = `<p class="ok">Horario válido. Cobertura 07:00–24:00 y máximo 6 días consecutivos.</p><p>${cycleText}</p>`;
+    el.innerHTML = `<p class="ok">Horario válido. Cobertura 07:00–24:00, máximo 6 días consecutivos y sin turno M después de T.</p><p>${cycleText}</p>`;
   } else {
     el.innerHTML = `<p class="error">Se encontraron errores:</p><ul>${validation.messages.map(m => `<li>${m}</li>`).join("")}</ul><p>${cycleText}</p>`;
   }

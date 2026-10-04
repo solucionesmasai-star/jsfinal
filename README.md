@@ -36,3 +36,9 @@ La fecha de inicio se normaliza automáticamente al lunes de esa semana.
 ## Uso
 
 No requiere instalación ni dependencias. Abrir `index.html` directamente en el navegador.
+
+
+## Regla de descanso entre turnos
+
+- Un turno **T (15:00–24:00)** nunca puede ser seguido al día siguiente por un turno **M (07:00–15:00)**.
+- Esta regla se valida también entre semanas, meses y años porque el ciclo es continuo.
