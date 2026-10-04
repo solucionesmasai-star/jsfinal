@@ -166,3 +166,95 @@ th {
   .container { width: min(100% - 20px, 1400px); margin: 14px auto; }
   .panel { padding: 14px; }
 }
+
+.field small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.calendar-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cycle-note {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.calendar-wrap {
+  overflow-x: auto;
+}
+
+.calendar-heads,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  min-width: 1050px;
+}
+
+.calendar-head {
+  padding: 10px;
+  text-align: center;
+  font-weight: 700;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.calendar-day {
+  min-height: 176px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.calendar-day.outside {
+  background: #f9fafb;
+  opacity: .55;
+}
+
+.date-number {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 9px;
+}
+
+.calendar-shift {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 5px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.calendar-shift:first-of-type {
+  border-top: 0;
+}
+
+.calendar-shift .js-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.calendar-shift small {
+  grid-column: 1 / -1;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .calendar-title-row {
+    display: block;
+  }
+
+  .cycle-note {
+    display: block;
+    margin: -8px 0 12px;
+  }
+}

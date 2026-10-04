@@ -10,15 +10,21 @@
   <header class="topbar">
     <div>
       <h1>Turnos Jefes de Servicio</h1>
-      <p>Planificación independiente · 3 JS · cobertura 07:00–24:00</p>
+      <p>Calendario mensual · ciclo continuo · cobertura 07:00–24:00</p>
     </div>
   </header>
 
   <main class="container">
     <section class="panel controls">
       <div class="field">
-        <label for="weeks">Semanas a proyectar</label>
-        <input id="weeks" type="number" min="1" max="52" value="8" />
+        <label for="monthPicker">Mes a proyectar</label>
+        <input id="monthPicker" type="month" />
+      </div>
+
+      <div class="field">
+        <label for="cycleStart">Inicio del ciclo</label>
+        <input id="cycleStart" type="date" />
+        <small>Se ajusta automáticamente al lunes.</small>
       </div>
 
       <div class="field">
@@ -37,7 +43,9 @@
       </div>
 
       <div class="actions">
-        <button id="generateBtn">Generar horario</button>
+        <button id="prevMonth" class="secondary">← Mes anterior</button>
+        <button id="generateBtn">Generar</button>
+        <button id="nextMonth" class="secondary">Mes siguiente →</button>
         <button id="csvBtn" class="secondary">Exportar CSV</button>
       </div>
     </section>
@@ -55,25 +63,18 @@
     </section>
 
     <section class="panel">
-      <h2>Resumen</h2>
+      <h2>Resumen mensual</h2>
       <div id="summary"></div>
     </section>
 
     <section class="panel">
-      <h2>Proyección</h2>
-      <div class="table-wrap">
-        <table id="scheduleTable">
-          <thead>
-            <tr>
-              <th>Semana</th>
-              <th>Día</th>
-              <th id="head1">JS 1</th>
-              <th id="head2">JS 2</th>
-              <th id="head3">JS 3</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+      <div class="calendar-title-row">
+        <h2 id="calendarTitle">Calendario</h2>
+        <span class="cycle-note">El ciclo continúa entre meses y años.</span>
+      </div>
+      <div class="calendar-wrap">
+        <div id="calendarHeads" class="calendar-heads"></div>
+        <div id="calendarGrid" class="calendar-grid"></div>
       </div>
     </section>
   </main>
