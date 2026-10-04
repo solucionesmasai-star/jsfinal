@@ -17,28 +17,24 @@ Aplicación simple en HTML, CSS y JavaScript puro para proyectar el horario mens
 - R: 10:00–17:00 (7 h)
 - L: Libre
 
+## Reglas principales
+
+- 3 Jefes de Servicio.
+- 42 horas semanales por JS.
+- 5 días trabajados y 2 libres por semana.
+- Máximo 6 días consecutivos.
+- Nunca se asigna M al día siguiente de un T.
+- De lunes a sábado se mantiene cobertura M + T.
+- Cada JS recibe exactamente 2 domingos libres por mes.
+- Cada domingo debe trabajar al menos 1 JS.
+- Si un domingo trabaja un solo JS, recibe únicamente M o T.
+- Si trabajan 2 JS el domingo, se asignan M + T.
+- La asignación dominical rota mes a mes para mantener equidad.
+
 ## Funcionamiento cíclico
 
-El horario usa un ciclo continuo de 3 semanas. La aplicación permite definir una fecha de inicio del ciclo y proyectar cualquier mes calendario. Cambiar de mes o de año no reinicia la rotación.
-
-La fecha de inicio se normaliza automáticamente al lunes de esa semana.
-
-## Validaciones
-
-- cobertura diaria desde 07:00 hasta 24:00;
-- máximo 6 días consecutivos;
-- control de cierre 24:00 seguido de apertura 07:00;
-- continuidad del ciclo al cruzar meses y años;
-- resumen mensual por JS;
-- domingos libres;
-- exportación CSV del mes seleccionado.
+El horario se proyecta por mes calendario, pero las semanas se construyen como un ciclo continuo desde la fecha de inicio configurada. Cambiar de mes no reinicia la continuidad entre turnos.
 
 ## Uso
 
 No requiere instalación ni dependencias. Abrir `index.html` directamente en el navegador.
-
-
-## Regla de descanso entre turnos
-
-- Un turno **T (15:00–24:00)** nunca puede ser seguido al día siguiente por un turno **M (07:00–15:00)**.
-- Esta regla se valida también entre semanas, meses y años porque el ciclo es continuo.

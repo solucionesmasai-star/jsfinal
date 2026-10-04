@@ -258,3 +258,18 @@ th {
     margin: -8px 0 12px;
   }
 }
+
+.reduced-sunday {
+  outline: 2px dashed rgba(190, 120, 0, 0.45);
+  outline-offset: -2px;
+}
+
+.reduced-badge {
+  display: inline-block;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(190, 120, 0, 0.12);
+}

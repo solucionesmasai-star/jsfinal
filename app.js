@@ -9,20 +9,48 @@ const SHIFT_INFO = {
   L: { label: "Libre", hours: 0 }
 };
 
-// Perfil semanal: lunes a domingo.
-const PROFILES = {
-  A: ["M", "M", "M", "L", "L", "T", "T"],
-  B: ["T", "T", "L", "M", "M", "M", "L"],
-  C: ["R", "L", "T", "T", "T", "L", "M"]
-};
+/*
+  Patrones semanales válidos.
+  Todos cumplen por JS:
+  - 42 horas semanales
+  - 5 días trabajados / 2 libres
+  - nunca T -> M al día siguiente dentro de la semana
 
-// Ciclo continuo de 3 semanas.
-// No se reinicia al cambiar de mes o año.
-const ROTATION = [
-  ["A", "B", "C"],
-  ["B", "C", "A"],
-  ["C", "A", "B"]
-];
+  La clave indica qué JS tienen libre el domingo.
+  Cada grupo contiene alternativas para permitir continuidad entre semanas.
+*/
+const WEEK_TEMPLATES = {
+  "0": [
+    ["MMMLTTL", "TTLMMLM", "RLTTLMT"],
+    ["MMMLTTL", "TTLMMLM", "LRTTLMT"],
+    ["MMMLTTL", "RLTTLMT", "TTLMMLM"]
+  ],
+  "1": [
+    ["MMMLLTT", "TTLMMML", "RLTTTLM"],
+    ["MMTLMLT", "RTLMTTL", "TLMTLMM"],
+    ["MMTLTLM", "TTLMMML", "RLMTLTT"]
+  ],
+  "2": [
+    ["MMMLLTT", "RLTTTLM", "TTLMMML"],
+    ["MMTLMLT", "TLMTLMM", "RTLMTTL"],
+    ["MMTLTLM", "RLMTLTT", "TTLMMML"]
+  ],
+  "0,1": [
+    ["MMMLTTL", "TTLMMML", "MLTTRLT"],
+    ["MMMLTTL", "TTLMMML", "MLTTLRT"],
+    ["MMMLTTL", "TTLMMML", "TLTTRLM"]
+  ],
+  "0,2": [
+    ["MMMLTTL", "MLTTRLT", "TTLMMML"],
+    ["MMMLTTL", "MLTTLRT", "TTLMMML"],
+    ["MMMLTTL", "TLTTRLM", "TTLMMML"]
+  ],
+  "1,2": [
+    ["MLMMTLT", "MMTLMTL", "TTLTRML"],
+    ["MLMMTLT", "TTLTRML", "MMTLMTL"],
+    ["MLMTTLM", "TTLMMML", "RMTLTTL"]
+  ]
+};
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -83,16 +111,179 @@ function getCycleStart() {
   return normalizeCycleStart(raw);
 }
 
-function getShiftsForDate(date, cycleStart) {
-  const daysFromStart = diffDays(date, cycleStart);
-  const weekIndex = Math.floor(daysFromStart / 7);
-  const rotation = ROTATION[positiveModulo(weekIndex, ROTATION.length)];
-  const dayIndex = mondayIndex(date);
-
-  return rotation.map(profileName => PROFILES[profileName][dayIndex]);
+function getSundaysInMonth(year, monthIndex) {
+  const sundays = [];
+  const last = new Date(year, monthIndex + 1, 0, 12);
+  for (let day = 1; day <= last.getDate(); day++) {
+    const date = new Date(year, monthIndex, day, 12);
+    if (mondayIndex(date) === 6) sundays.push(date);
+  }
+  return sundays;
 }
 
-function buildMonthSchedule(year, monthIndex, cycleStart) {
+function rotateSet(values, rotation) {
+  return values.map(value => positiveModulo(value + rotation, 3)).sort((a, b) => a - b);
+}
+
+/*
+  Cada JS recibe exactamente 2 domingos libres por mes.
+  - Mes de 4 domingos: 6 libres repartidos como 1 + 1 + 2 + 2.
+  - Mes de 5 domingos: 6 libres repartidos como 2 + 1 + 1 + 1 + 1.
+  Nunca quedan los 3 JS libres el mismo domingo.
+*/
+function buildSundayOffPlan(year, monthIndex, cycleStart) {
+  const sundays = getSundaysInMonth(year, monthIndex);
+  const cycleSerial = cycleStart.getFullYear() * 12 + cycleStart.getMonth();
+  const monthSerial = year * 12 + monthIndex;
+  const rotation = positiveModulo(monthSerial - cycleSerial, 3);
+
+  const base = sundays.length === 5
+    ? [[0, 1], [2], [0], [2], [1]]
+    : [[0], [1], [0, 2], [1, 2]];
+
+  const plan = new Map();
+  sundays.forEach((date, index) => {
+    plan.set(formatDateInput(date), rotateSet(base[index], rotation));
+  });
+  return plan;
+}
+
+function sundayOffForDate(date, cycleStart) {
+  const plan = buildSundayOffPlan(date.getFullYear(), date.getMonth(), cycleStart);
+  return plan.get(formatDateInput(date));
+}
+
+function offKey(indices) {
+  return [...indices].sort((a, b) => a - b).join(",");
+}
+
+function tailWorkDays(sequence) {
+  let total = 0;
+  for (let i = sequence.length - 1; i >= 0; i--) {
+    if (sequence[i] === "L") break;
+    total++;
+  }
+  return total;
+}
+
+function headWorkDays(sequence) {
+  let total = 0;
+  for (let i = 0; i < sequence.length; i++) {
+    if (sequence[i] === "L") break;
+    total++;
+  }
+  return total;
+}
+
+function templatesCompatible(previous, current) {
+  if (!previous) return true;
+
+  for (let js = 0; js < 3; js++) {
+    const prev = previous[js];
+    const curr = current[js];
+
+    if (prev[6] === "T" && curr[0] === "M") return false;
+    if (tailWorkDays(prev) + headWorkDays(curr) > 6) return false;
+  }
+  return true;
+}
+
+function validateTemplate(template, sundayOff) {
+  const expectedKey = offKey(sundayOff);
+  const actualOff = [];
+
+  for (let js = 0; js < 3; js++) {
+    const sequence = template[js];
+    const hours = [...sequence].reduce((sum, shift) => sum + SHIFT_INFO[shift].hours, 0);
+    const worked = [...sequence].filter(shift => shift !== "L").length;
+
+    if (hours !== 42 || worked !== 5) return false;
+    if (sequence[6] === "L") actualOff.push(js);
+    for (let d = 1; d < 7; d++) {
+      if (sequence[d - 1] === "T" && sequence[d] === "M") return false;
+    }
+  }
+
+  if (offKey(actualOff) !== expectedKey) return false;
+
+  // Lunes a sábado deben mantener apertura y cierre.
+  for (let d = 0; d < 6; d++) {
+    const shifts = template.map(sequence => sequence[d]);
+    if (!shifts.includes("M") || !shifts.includes("T")) return false;
+  }
+
+  // Domingo: mínimo 1 JS. Si queda solo uno, debe ser M o T.
+  const sundayWorking = template.map(sequence => sequence[6]).filter(shift => shift !== "L");
+  if (sundayWorking.length < 1) return false;
+  if (sundayWorking.length === 1 && !["M", "T"].includes(sundayWorking[0])) return false;
+  if (sundayWorking.length === 2 && !(sundayWorking.includes("M") && sundayWorking.includes("T"))) return false;
+
+  return true;
+}
+
+function mondayOf(date) {
+  return addDays(date, -mondayIndex(date));
+}
+
+/*
+  Genera semanas completas desde el inicio del ciclo hasta la fecha solicitada.
+  Usa programación dinámica con las alternativas de cada patrón para asegurar
+  continuidad entre semanas sin T->M y sin superar 6 días consecutivos.
+*/
+function buildWeeklyPlan(endDate, cycleStart) {
+  const firstMonday = cycleStart;
+  const lastMonday = mondayOf(endDate);
+  const weeks = Math.floor(diffDays(lastMonday, firstMonday) / 7) + 1;
+
+  if (weeks <= 0) return new Map();
+
+  let states = [{ template: null, path: [] }];
+
+  for (let week = 0; week < weeks; week++) {
+    const monday = addDays(firstMonday, week * 7);
+    const sunday = addDays(monday, 6);
+    const off = sundayOffForDate(sunday, cycleStart);
+    const pool = WEEK_TEMPLATES[offKey(off)] || [];
+    const nextStates = [];
+
+    for (const candidate of pool) {
+      if (!validateTemplate(candidate, off)) continue;
+
+      const compatibleState = states.find(state => templatesCompatible(state.template, candidate));
+      if (compatibleState) {
+        nextStates.push({ template: candidate, path: [...compatibleState.path, candidate] });
+      }
+    }
+
+    if (!nextStates.length) {
+      throw new Error(`No fue posible continuar el ciclo en la semana del ${formatDateInput(monday)}.`);
+    }
+
+    states = nextStates;
+  }
+
+  const chosen = states[0].path;
+  const result = new Map();
+  chosen.forEach((template, index) => {
+    result.set(formatDateInput(addDays(firstMonday, index * 7)), template);
+  });
+  return result;
+}
+
+function getShiftsForDate(date, cycleStart, weeklyPlan) {
+  if (date < cycleStart) {
+    // Para días anteriores al inicio formal del ciclo se muestra libre.
+    return ["L", "L", "L"];
+  }
+
+  const monday = mondayOf(date);
+  const template = weeklyPlan.get(formatDateInput(monday));
+  if (!template) return ["L", "L", "L"];
+  const dayIndex = mondayIndex(date);
+  return template.map(sequence => sequence[dayIndex]);
+}
+
+function buildMonthSchedule(year, monthIndex, cycleStart, weeklyPlan) {
   const result = [];
   const first = new Date(year, monthIndex, 1, 12);
   const last = new Date(year, monthIndex + 1, 0, 12);
@@ -102,24 +293,23 @@ function buildMonthSchedule(year, monthIndex, cycleStart) {
       date: new Date(date),
       dayIndex: mondayIndex(date),
       day: DAYS[mondayIndex(date)],
-      shifts: getShiftsForDate(date, cycleStart)
+      shifts: getShiftsForDate(date, cycleStart, weeklyPlan)
     });
   }
 
   return result;
 }
 
-function buildValidationWindow(year, monthIndex, cycleStart) {
+function buildValidationWindow(year, monthIndex, cycleStart, weeklyPlan) {
   const first = new Date(year, monthIndex, 1, 12);
   const last = new Date(year, monthIndex + 1, 0, 12);
-  const start = addDays(first, -7);
+  const start = new Date(Math.max(addDays(first, -7).getTime(), cycleStart.getTime()));
   const end = addDays(last, 7);
   const result = [];
 
   for (let date = new Date(start); date <= end; date = addDays(date, 1)) {
-    result.push({ date: new Date(date), shifts: getShiftsForDate(date, cycleStart) });
+    result.push({ date: new Date(date), shifts: getShiftsForDate(date, cycleStart, weeklyPlan) });
   }
-
   return result;
 }
 
@@ -160,24 +350,70 @@ function validateCoverage(schedule) {
   const errors = [];
   schedule.forEach(row => {
     const shifts = row.shifts;
-    if (!shifts.includes("M")) {
-      errors.push(`${formatDateInput(row.date)}: sin JS de apertura 07:00.`);
-    }
-    if (!shifts.includes("T")) {
-      errors.push(`${formatDateInput(row.date)}: sin JS de cierre hasta 24:00.`);
+    const isSunday = mondayIndex(row.date) === 6;
+
+    if (isSunday) {
+      const working = shifts.filter(shift => shift !== "L");
+      if (working.length < 1) errors.push(`${formatDateInput(row.date)}: domingo sin Jefe de Servicio.`);
+      if (working.length === 1 && !["M", "T"].includes(working[0])) {
+        errors.push(`${formatDateInput(row.date)}: el único JS dominical debe tener turno M o T.`);
+      }
+    } else {
+      if (!shifts.includes("M")) errors.push(`${formatDateInput(row.date)}: sin JS de apertura 07:00.`);
+      if (!shifts.includes("T")) errors.push(`${formatDateInput(row.date)}: sin JS de cierre hasta 24:00.`);
     }
   });
   return errors;
 }
 
+function validateSundayRules(monthSchedule) {
+  const names = getNames();
+  const errors = [];
+
+  names.forEach((name, js) => {
+    const offs = countSundaysOff(monthSchedule, js);
+    if (offs !== 2) errors.push(`${name}: debe tener exactamente 2 domingos libres y tiene ${offs}.`);
+  });
+
+  return errors;
+}
+
+function validateWeeklyHours(validationWindow) {
+  const errors = [];
+  const names = getNames();
+  const weeks = new Map();
+
+  validationWindow.forEach(row => {
+    const monday = mondayOf(row.date);
+    const key = formatDateInput(monday);
+    if (!weeks.has(key)) weeks.set(key, []);
+    weeks.get(key).push(row);
+  });
+
+  weeks.forEach((rows, mondayKey) => {
+    if (rows.length !== 7) return;
+    names.forEach((name, js) => {
+      const hours = rows.reduce((sum, row) => sum + SHIFT_INFO[row.shifts[js]].hours, 0);
+      const worked = rows.filter(row => row.shifts[js] !== "L").length;
+      if (hours !== 42) errors.push(`${name}: semana ${mondayKey} tiene ${hours} h en vez de 42 h.`);
+      if (worked !== 5) errors.push(`${name}: semana ${mondayKey} tiene ${worked} días trabajados en vez de 5.`);
+    });
+  });
+
+  return errors;
+}
+
 function validateSchedule(monthSchedule, validationWindow) {
   const names = getNames();
-  const messages = validateCoverage(monthSchedule);
+  const messages = [
+    ...validateCoverage(monthSchedule),
+    ...validateSundayRules(monthSchedule),
+    ...validateWeeklyHours(validationWindow)
+  ];
 
   names.forEach((name, i) => {
     const consecutive = maxConsecutiveDays(validationWindow, i);
     const closeOpen = countCloseToOpen(validationWindow, i);
-
     if (consecutive > 6) messages.push(`${name}: supera 6 días consecutivos (${consecutive}).`);
     if (closeOpen > 0) messages.push(`${name}: presenta ${closeOpen} cierre(s) seguido(s) de apertura.`);
   });
@@ -194,7 +430,7 @@ function calendarBounds(year, monthIndex) {
   };
 }
 
-function renderCalendar(year, monthIndex, cycleStart) {
+function renderCalendar(year, monthIndex, cycleStart, weeklyPlan) {
   const names = getNames();
   const grid = document.getElementById("calendarGrid");
   const { start, end } = calendarBounds(year, monthIndex);
@@ -205,11 +441,14 @@ function renderCalendar(year, monthIndex, cycleStart) {
   let html = "";
   for (let date = new Date(start); date <= end; date = addDays(date, 1)) {
     const inMonth = date.getMonth() === monthIndex;
-    const shifts = getShiftsForDate(date, cycleStart);
+    const shifts = getShiftsForDate(date, cycleStart, weeklyPlan);
+    const isSunday = mondayIndex(date) === 6;
+    const workingSunday = isSunday ? shifts.filter(shift => shift !== "L").length : 0;
 
     html += `
-      <div class="calendar-day ${inMonth ? "" : "outside"}">
+      <div class="calendar-day ${inMonth ? "" : "outside"} ${isSunday && workingSunday === 1 ? "reduced-sunday" : ""}">
         <div class="date-number">${date.getDate()}</div>
+        ${isSunday && workingSunday === 1 ? '<div class="reduced-badge">Domingo · 1 JS</div>' : ''}
         ${names.map((name, i) => `
           <div class="calendar-shift">
             <span class="js-name">${name}</span>
@@ -220,7 +459,6 @@ function renderCalendar(year, monthIndex, cycleStart) {
       </div>
     `;
   }
-
   grid.innerHTML = html;
 }
 
@@ -234,7 +472,7 @@ function renderSummary(monthSchedule, validationWindow) {
           <p><strong>Horas del mes:</strong> ${totalMonthHours(monthSchedule, i)}</p>
           <p><strong>M:</strong> ${countShift(monthSchedule, i, "M")} · <strong>T:</strong> ${countShift(monthSchedule, i, "T")} · <strong>R:</strong> ${countShift(monthSchedule, i, "R")}</p>
           <p><strong>Libres:</strong> ${countShift(monthSchedule, i, "L")}</p>
-          <p><strong>Domingos libres:</strong> ${countSundaysOff(monthSchedule, i)}</p>
+          <p><strong>Domingos libres:</strong> ${countSundaysOff(monthSchedule, i)} / 2</p>
           <p><strong>Máx. días consecutivos:</strong> ${maxConsecutiveDays(validationWindow, i)}</p>
           <p><strong>Cierre → apertura:</strong> ${countCloseToOpen(validationWindow, i)}</p>
         </div>
@@ -248,7 +486,7 @@ function renderValidation(validation, cycleStart) {
   const cycleText = `Ciclo continuo anclado al lunes ${formatDateInput(cycleStart)}.`;
 
   if (validation.valid) {
-    el.innerHTML = `<p class="ok">Horario válido. Cobertura 07:00–24:00, máximo 6 días consecutivos y sin turno M después de T.</p><p>${cycleText}</p>`;
+    el.innerHTML = `<p class="ok">Horario válido. 42 h semanales, 2 domingos libres por JS, mínimo 1 JS los domingos, máximo 6 días consecutivos y sin M después de T.</p><p>${cycleText}</p>`;
   } else {
     el.innerHTML = `<p class="error">Se encontraron errores:</p><ul>${validation.messages.map(m => `<li>${m}</li>`).join("")}</ul><p>${cycleText}</p>`;
   }
@@ -261,15 +499,23 @@ let currentMonthIndex = 0;
 function generate() {
   const { year, monthIndex } = parseMonthInput(document.getElementById("monthPicker").value);
   const cycleStart = getCycleStart();
+  const calendarEnd = calendarBounds(year, monthIndex).end;
 
   currentYear = year;
   currentMonthIndex = monthIndex;
-  currentMonthSchedule = buildMonthSchedule(year, monthIndex, cycleStart);
-  const validationWindow = buildValidationWindow(year, monthIndex, cycleStart);
 
-  renderCalendar(year, monthIndex, cycleStart);
-  renderSummary(currentMonthSchedule, validationWindow);
-  renderValidation(validateSchedule(currentMonthSchedule, validationWindow), cycleStart);
+  try {
+    const planEnd = addDays(calendarEnd, 7);
+    const weeklyPlan = buildWeeklyPlan(planEnd, cycleStart);
+    currentMonthSchedule = buildMonthSchedule(year, monthIndex, cycleStart, weeklyPlan);
+    const validationWindow = buildValidationWindow(year, monthIndex, cycleStart, weeklyPlan);
+
+    renderCalendar(year, monthIndex, cycleStart, weeklyPlan);
+    renderSummary(currentMonthSchedule, validationWindow);
+    renderValidation(validateSchedule(currentMonthSchedule, validationWindow), cycleStart);
+  } catch (error) {
+    document.getElementById("validation").innerHTML = `<p class="error">${error.message}</p>`;
+  }
 }
 
 function moveMonth(delta) {
@@ -304,9 +550,6 @@ function exportCSV() {
 function setInitialValues() {
   const today = new Date();
   document.getElementById("monthPicker").value = formatMonthInput(today);
-
-  // Punto inicial del ciclo. Debe ser lunes.
-  // Puede cambiarse sin modificar código.
   const defaultCycle = new Date(2026, 0, 5, 12);
   document.getElementById("cycleStart").value = formatDateInput(defaultCycle);
 }
@@ -317,7 +560,6 @@ document.getElementById("generateBtn").addEventListener("click", generate);
 document.getElementById("prevMonth").addEventListener("click", () => moveMonth(-1));
 document.getElementById("nextMonth").addEventListener("click", () => moveMonth(1));
 document.getElementById("csvBtn").addEventListener("click", exportCSV);
-
 document.getElementById("monthPicker").addEventListener("change", generate);
 document.getElementById("cycleStart").addEventListener("change", () => {
   const normalized = getCycleStart();
