@@ -273,3 +273,49 @@ th {
   font-weight: 700;
   background: rgba(190, 120, 0, 0.12);
 }
+
+
+/* Supabase */
+.supabase-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.supabase-panel h2 { margin-bottom: 4px; }
+.muted { margin: 0; color: #6b7280; font-size: 13px; }
+
+.auth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.auth-actions {
+  grid-column: 1 / -1;
+}
+
+button.cloud {
+  background: #047857;
+}
+
+button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.cloud-status {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+.cloud-status.ok { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+.cloud-status.error { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+.cloud-status.info { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+
+@media (max-width: 700px) {
+  .auth-grid { grid-template-columns: 1fr; }
+}

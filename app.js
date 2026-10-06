@@ -1,3 +1,251 @@
+// =============================
+// SUPABASE
+// =============================
+// Reemplaza estos dos valores con Project URL y anon/public key de tu proyecto.
+// Nunca uses la service_role key en este archivo ni en GitHub.
+const SUPABASE_URL = "https://etpyqkgwufcztrwiqlsc.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_FdGUDvsYeau50wDKfMVjyg_LnkCAhg3";
+
+let supabaseClient = null;
+
+function supabaseConfigured() {
+  return (
+    SUPABASE_URL.startsWith("https://") &&
+    !SUPABASE_URL.includes("PEGA_AQUI") &&
+    SUPABASE_ANON_KEY &&
+    !SUPABASE_ANON_KEY.includes("PEGA_AQUI")
+  );
+}
+
+function setCloudStatus(message, type = "info") {
+  const el = document.getElementById("supabaseStatus");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `cloud-status ${type}`;
+}
+
+function initSupabase() {
+  if (!supabaseConfigured()) {
+    setCloudStatus("Supabase sin configurar. Agrega URL y anon key en app.js.", "info");
+    return;
+  }
+
+  if (!window.supabase) {
+    setCloudStatus("No fue posible cargar la librería de Supabase.", "error");
+    return;
+  }
+
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  refreshAuthState();
+
+  supabaseClient.auth.onAuthStateChange(() => refreshAuthState());
+}
+
+async function getCurrentSession() {
+  if (!supabaseClient) return null;
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+async function refreshAuthState() {
+  if (!supabaseClient) return;
+  try {
+    const session = await getCurrentSession();
+    const saveBtn = document.getElementById("saveCloudBtn");
+    const loadBtn = document.getElementById("loadCloudBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const loginBtn = document.getElementById("loginBtn");
+
+    const logged = Boolean(session);
+    saveBtn.disabled = !logged;
+    loadBtn.disabled = !logged;
+    logoutBtn.disabled = !logged;
+    loginBtn.disabled = logged;
+
+    if (logged) {
+      setCloudStatus(`Conectado como ${session.user.email}.`, "ok");
+    } else {
+      setCloudStatus("Supabase conectado. Inicia sesión para guardar o cargar horarios.", "info");
+    }
+  } catch (error) {
+    setCloudStatus(error.message || "Error consultando la sesión.", "error");
+  }
+}
+
+async function loginSupabase() {
+  if (!supabaseClient) {
+    setCloudStatus("Configura Supabase en app.js antes de iniciar sesión.", "error");
+    return;
+  }
+
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  if (!email || !password) {
+    setCloudStatus("Ingresa email y contraseña.", "error");
+    return;
+  }
+
+  setCloudStatus("Iniciando sesión…", "info");
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    setCloudStatus(error.message, "error");
+    return;
+  }
+  document.getElementById("authPassword").value = "";
+  await refreshAuthState();
+}
+
+async function logoutSupabase() {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) setCloudStatus(error.message, "error");
+  else await refreshAuthState();
+}
+
+function serializeSchedule(schedule) {
+  return schedule.map(row => ({
+    date: formatDateInput(row.date),
+    day: row.day,
+    shifts: [...row.shifts]
+  }));
+}
+
+function deserializeSchedule(schedule) {
+  return (schedule || []).map(row => ({
+    date: parseDateInput(row.date),
+    dayIndex: mondayIndex(parseDateInput(row.date)),
+    day: row.day || DAYS[mondayIndex(parseDateInput(row.date))],
+    shifts: [...row.shifts]
+  }));
+}
+
+async function saveMonthToSupabase() {
+  if (!supabaseClient) {
+    setCloudStatus("Supabase no está configurado.", "error");
+    return;
+  }
+
+  try {
+    const session = await getCurrentSession();
+    if (!session) {
+      setCloudStatus("Debes iniciar sesión antes de guardar.", "error");
+      return;
+    }
+
+    generate();
+    const monthKey = document.getElementById("monthPicker").value;
+    const payload = {
+      user_id: session.user.id,
+      month_key: monthKey,
+      cycle_start: formatDateInput(getCycleStart()),
+      js_names: getNames(),
+      schedule: serializeSchedule(currentMonthSchedule),
+      updated_at: new Date().toISOString()
+    };
+
+    setCloudStatus(`Guardando ${monthKey}…`, "info");
+    const { error } = await supabaseClient
+      .from("js_schedule_months")
+      .upsert(payload, { onConflict: "user_id,month_key" });
+
+    if (error) throw error;
+    setCloudStatus(`Mes ${monthKey} guardado correctamente en Supabase.`, "ok");
+  } catch (error) {
+    setCloudStatus(error.message || "No fue posible guardar el mes.", "error");
+  }
+}
+
+function renderLoadedSnapshot(monthSchedule, year, monthIndex, cycleStart, weeklyPlan) {
+  const names = getNames();
+  const savedMap = new Map(monthSchedule.map(row => [formatDateInput(row.date), row.shifts]));
+  const grid = document.getElementById("calendarGrid");
+  const { start, end } = calendarBounds(year, monthIndex);
+
+  document.getElementById("calendarTitle").textContent = `${MONTHS[monthIndex][0].toUpperCase()}${MONTHS[monthIndex].slice(1)} ${year}`;
+  document.getElementById("calendarHeads").innerHTML = DAYS_SHORT.map(day => `<div class="calendar-head">${day}</div>`).join("");
+
+  let html = "";
+  for (let date = new Date(start); date <= end; date = addDays(date, 1)) {
+    const key = formatDateInput(date);
+    const inMonth = date.getMonth() === monthIndex;
+    const shifts = savedMap.get(key) || getShiftsForDate(date, cycleStart, weeklyPlan);
+    const isSunday = mondayIndex(date) === 6;
+    const workingSunday = isSunday ? shifts.filter(shift => shift !== "L").length : 0;
+
+    html += `
+      <div class="calendar-day ${inMonth ? "" : "outside"} ${isSunday && workingSunday === 1 ? "reduced-sunday" : ""}">
+        <div class="date-number">${date.getDate()}</div>
+        ${isSunday && workingSunday === 1 ? '<div class="reduced-badge">Domingo · 1 JS</div>' : ''}
+        ${names.map((name, i) => `
+          <div class="calendar-shift">
+            <span class="js-name">${name}</span>
+            <span class="shift shift-${shifts[i]}">${shifts[i]}</span>
+            <small>${SHIFT_INFO[shifts[i]].label}</small>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+  grid.innerHTML = html;
+}
+
+async function loadMonthFromSupabase() {
+  if (!supabaseClient) {
+    setCloudStatus("Supabase no está configurado.", "error");
+    return;
+  }
+
+  try {
+    const session = await getCurrentSession();
+    if (!session) {
+      setCloudStatus("Debes iniciar sesión antes de cargar.", "error");
+      return;
+    }
+
+    const monthKey = document.getElementById("monthPicker").value;
+    setCloudStatus(`Cargando ${monthKey}…`, "info");
+
+    const { data, error } = await supabaseClient
+      .from("js_schedule_months")
+      .select("month_key,cycle_start,js_names,schedule,updated_at")
+      .eq("user_id", session.user.id)
+      .eq("month_key", monthKey)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      setCloudStatus(`No existe un horario guardado para ${monthKey}.`, "info");
+      return;
+    }
+
+    const names = Array.isArray(data.js_names) ? data.js_names : ["JS 1", "JS 2", "JS 3"];
+    document.getElementById("js1").value = names[0] || "JS 1";
+    document.getElementById("js2").value = names[1] || "JS 2";
+    document.getElementById("js3").value = names[2] || "JS 3";
+    document.getElementById("cycleStart").value = data.cycle_start;
+
+    const { year, monthIndex } = parseMonthInput(monthKey);
+    const cycleStart = getCycleStart();
+    const planEnd = addDays(calendarBounds(year, monthIndex).end, 7);
+    const weeklyPlan = buildWeeklyPlan(planEnd, cycleStart);
+    const validationWindow = buildValidationWindow(year, monthIndex, cycleStart, weeklyPlan);
+
+    currentYear = year;
+    currentMonthIndex = monthIndex;
+    currentMonthSchedule = deserializeSchedule(data.schedule);
+
+    renderLoadedSnapshot(currentMonthSchedule, year, monthIndex, cycleStart, weeklyPlan);
+    renderSummary(currentMonthSchedule, validationWindow);
+    renderValidation(validateSchedule(currentMonthSchedule, validationWindow), cycleStart);
+
+    const when = data.updated_at ? new Date(data.updated_at).toLocaleString("es-CL") : "";
+    setCloudStatus(`Mes ${monthKey} cargado desde Supabase${when ? ` · actualizado ${when}` : ""}.`, "ok");
+  } catch (error) {
+    setCloudStatus(error.message || "No fue posible cargar el mes.", "error");
+  }
+}
+
 const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const DAYS_SHORT = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -568,4 +816,10 @@ document.getElementById("cycleStart").addEventListener("change", () => {
 });
 ["js1", "js2", "js3"].forEach(id => document.getElementById(id).addEventListener("change", generate));
 
+document.getElementById("loginBtn").addEventListener("click", loginSupabase);
+document.getElementById("logoutBtn").addEventListener("click", logoutSupabase);
+document.getElementById("saveCloudBtn").addEventListener("click", saveMonthToSupabase);
+document.getElementById("loadCloudBtn").addEventListener("click", loadMonthFromSupabase);
+
+initSupabase();
 generate();

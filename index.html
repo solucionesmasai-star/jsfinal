@@ -50,6 +50,30 @@
       </div>
     </section>
 
+    <section class="panel supabase-panel">
+      <div>
+        <h2>Supabase</h2>
+        <p class="muted">Inicia sesión para guardar y recuperar el mes seleccionado.</p>
+      </div>
+      <div class="auth-grid">
+        <div class="field">
+          <label for="authEmail">Email</label>
+          <input id="authEmail" type="email" autocomplete="username" placeholder="usuario@empresa.cl" />
+        </div>
+        <div class="field">
+          <label for="authPassword">Contraseña</label>
+          <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div class="actions auth-actions">
+          <button id="loginBtn">Ingresar</button>
+          <button id="logoutBtn" class="secondary">Salir</button>
+          <button id="saveCloudBtn" class="cloud">Guardar mes</button>
+          <button id="loadCloudBtn" class="secondary">Cargar mes</button>
+        </div>
+      </div>
+      <div id="supabaseStatus" class="cloud-status">Supabase sin configurar.</div>
+    </section>
+
     <section class="panel legend">
       <div><strong>M</strong> 07:00–15:00 · 8 h</div>
       <div><strong>T</strong> 15:00–24:00 · 9 h</div>
@@ -79,6 +103,7 @@
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
 </html>
